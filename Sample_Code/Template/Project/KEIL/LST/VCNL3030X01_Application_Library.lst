@@ -1,0 +1,15 @@
+C51 COMPILER V9.55   VCNL3030X01_APPLICATION_LIBRARY                                       11/08/2021 12:53:16 PAGE 1   
+
+
+C51 COMPILER V9.55, COMPILATION OF MODULE VCNL3030X01_APPLICATION_LIBRARY
+OBJECT MODULE PLACED IN .\Output\VCNL3030X01_Application_Library.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE ..\VCNL3030X01\VCNL3030X01_Application_Library.c LARGE OPTIMIZE(7,SPEED)
+                    - BROWSE INCDIR(..\..\..\..\Library\Device\Include;..\..\..\..\Library\StdDriver\inc;..\..\Project;..\VCNL36687) DEBUG OB
+                    -JECTEXTEND PRINT(.\LST\VCNL3030X01_Application_Library.lst) TABS(2) OBJECT(.\Output\VCNL3030X01_Application_Library.obj)
+
+line level    source
+
+*** ERROR C318 OF ..\VCNL3030X01\VCNL3030X01_Application_Library.c: can't open file '..\VCNL3030X01\VCNL3030X01_Applicat
+             -ion_Library.c'
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  1 ERROR(S)

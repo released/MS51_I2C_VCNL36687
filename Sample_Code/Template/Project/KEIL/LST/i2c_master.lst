@@ -1,0 +1,825 @@
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 1   
+
+
+C51 COMPILER V9.55, COMPILATION OF MODULE I2C_MASTER
+OBJECT MODULE PLACED IN .\Output\i2c_master.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE ..\i2c_master.c LARGE OPTIMIZE(7,SPEED) BROWSE INCDIR(..\..\..\..\Librar
+                    -y\Device\Include;..\..\..\..\Library\StdDriver\inc;..\..\Project;..\VCNL36687) DEBUG OBJECTEXTEND PRINT(.\LST\i2c_master
+                    -.lst) TABS(2) OBJECT(.\Output\i2c_master.obj)
+
+line level    source
+
+   1          
+   2          #include "i2c_conf.h"
+   3          
+   4          //#include <stdio.h>
+   5          //#include "N76E003.h"
+   6          //#include "SFR_Macro.h"
+   7          //#include "Common.h"
+   8          
+   9          
+  10          #include "MS51_16K.h"
+  11          
+  12          /*--------------------------------------------------------------------------------------------------------
+             --*/
+  13          /* Global variables                                                                                       
+             - */
+  14          /*--------------------------------------------------------------------------------------------------------
+             --*/
+  15          
+  16          volatile unsigned char g_u8DeviceAddr_m;
+  17          volatile unsigned char g_u8DataLen_m;
+  18          volatile unsigned char rawlenth;
+  19          volatile unsigned char g_au8Reg;
+  20          volatile unsigned char g_u8EndFlag = 0;
+  21          volatile unsigned char *g_au8Buffer;
+  22          
+  23          typedef void (*I2C_FUNC)(unsigned long u32Status);
+  24          
+  25          volatile I2C_FUNC I2Cx_Master_HandlerFn = NULL;
+  26          
+  27          bit I2C_Reset_Flag;
+  28          
+  29          
+  30          /*--------------------------------------------------------------------------------------------------------
+             --*/
+  31          /*  I2C IRQ Handler                                                                                       
+             -*/
+  32          /*--------------------------------------------------------------------------------------------------------
+             --*/
+  33          
+  34          void I2C_start(void)
+  35          {
+  36   1          signed int t = I2C_timeout_count;
+  37   1          set_STA;                               
+  38   1          clr_SI;
+  39   1          while((SI == 0) && (t > 0))
+  40   1          {
+  41   2             t--;
+  42   2          };    
+  43   1      }
+  44          
+  45          void I2C_stop(void)
+  46          {
+  47   1          signed int t = I2C_timeout_count;
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 2   
+
+  48   1          clr_SI;
+  49   1          set_STO;
+  50   1          while((STO == 1) && (t > 0))
+  51   1          {
+  52   2              t--;
+  53   2          };    
+  54   1      }
+  55          
+  56          unsigned char I2C_read(unsigned char ack_mode)
+  57          {
+  58   1          signed int t = I2C_timeout_count;
+  59   1          unsigned char value = 0x00;
+  60   1          set_AA;                            
+  61   1          clr_SI;
+  62   1          while((SI == 0) && (t > 0))
+  63   1          {
+  64   2              t--;
+  65   2          };      
+  66   1          value = I2DAT;
+  67   1          if(ack_mode == I2C_NACK)
+  68   1          {
+  69   2              t = I2C_timeout_count;
+  70   2              clr_AA;  
+  71   2              clr_SI;
+  72   2              while((SI == 0) && (t > 0))
+  73   2              {
+  74   3                  t--;
+  75   3              };          
+  76   2          }
+  77   1          return value;
+  78   1      }
+  79          
+  80          
+  81          void I2C_write(unsigned char value)
+  82          {
+  83   1          signed int t = I2C_timeout_count;
+  84   1          I2DAT = value;
+  85   1          clr_STA;          
+  86   1          clr_SI;
+  87   1          while((SI == 0) && (t > 0))
+  88   1          {
+  89   2              t--;
+  90   2          }; 
+  91   1      }
+  92          
+  93          
+  94          unsigned char CRC_Get(unsigned char* array , unsigned int len)
+  95          {
+  96   1          // Return the CRC8 value for the given byte array (data), given length
+  97   1          unsigned char x, crc = 0xFF;
+  98   1          while (len--) 
+  99   1        {
+ 100   2              x = crc >> 4 ^ *array++;
+ 101   2              x ^= (x >> 2);
+ 102   2              crc = (unsigned char)(((unsigned char)(crc << 4)) ^ ((unsigned char)(x << 6)) ^ ((unsigned char)(x
+             - << 3)) ^ (unsigned char)x);
+ 103   2          }
+ 104   1          return crc;
+ 105   1      }
+ 106          
+ 107          void I2C_SI_Check(void)
+ 108          {
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 3   
+
+ 109   1          printf("I2C Write error \r\n");
+ 110   1      
+ 111   1          if (I2STAT == 0x00)
+ 112   1          {
+ 113   2              I2C_Reset_Flag = 1;
+ 114   2              set_I2CON_STO;
+ 115   2              SI = 0;
+ 116   2              if(SI)
+ 117   2              {
+ 118   3                  clr_I2CON_I2CEN;
+ 119   3                  set_I2CON_I2CEN;
+ 120   3              }   
+ 121   2          }  
+ 122   1      }
+ 123          
+ 124          void I2Cx_Master_LOG(unsigned long u32Status)
+ 125          {
+ 126   1        #if defined (DEBUG_LOG_MASTER_LV1)
+                  printf("%s  : 0x%2x \r\n", __FUNCTION__ , u32Status);
+              
+                #else
+ 130   1        UNUSED_VARIABLE(u32Status);
+*** WARNING C275 IN LINE 130 OF ..\i2c_master.c: expression with possibly no effect
+ 131   1        
+ 132   1        #endif
+ 133   1      }
+ 134          
+ 135          
+ 136          /*
+ 137            Solution: 
+ 138            ¡V  Send a STOP condition to I2C bus 
+ 139            ¡V  If the STOP condition is invalid, disable the I2C bus and then restart the communication. 
+ 140          
+ 141          */
+ 142          void I2Cx_Master_BusError(void)
+ 143          {
+ 144   1        while(SI != 0) 
+ 145   1        { 
+ 146   2          if (I2STAT == 0x00) 
+ 147   2            { 
+ 148   3            set_STO;       // Check bus status if bus error¡Afirst send stop 
+ 149   3            } 
+ 150   2          clr_SI; 
+ 151   2          if(SI != 0)       // If SI still keep 1  
+ 152   2          { 
+ 153   3            clr_I2CEN;      // please first disable I2C. 
+ 154   3            set_I2CEN ;      // Then enable I2C for clear SI. 
+ 155   3            clr_SI; 
+ 156   3            clr_I2CEN;      // At last disable I2C for next a new transfer 
+ 157   3          }   
+ 158   2        } 
+ 159   1      }
+ 160          
+ 161          void I2Cx_Master_IRQHandler(void) interrupt 6
+ 162          {
+ 163   1          unsigned int t = I2C_timeout_count;
+ 164   1        unsigned char flag = 0;
+ 165   1          unsigned long u32Status;
+ 166   1        
+ 167   1          u32Status = I2STAT;
+ 168   1      
+ 169   1        #if 1
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 4   
+
+ 170   1          if ( I2TOC &= SET_BIT0)
+ 171   1          {
+ 172   2              I2Cx_Master_BusError();    
+ 173   2          }
+ 174   1        #else
+                  while((SI == 0) && (t > 0))
+                  {
+                     t--;
+                   flag = 1;
+                  };
+              
+              
+                  if (flag)
+                  {
+                      I2Cx_Master_BusError();                
+                  }
+                #endif
+ 187   1          else
+ 188   1          {
+ 189   2              if (I2Cx_Master_HandlerFn != NULL)
+ 190   2                  I2Cx_Master_HandlerFn(u32Status);
+ 191   2          }
+ 192   1      }
+ 193          
+ 194          void I2Cx_MasterRx_multi(unsigned long u32Status)
+ 195          {
+ 196   1          if(u32Status == MASTER_START_TRANSMIT) //0x08                         /* START has been transmitted and
+             - prepare SLA+W */
+ 197   1          {
+ 198   2          clr_STA;                                  //STA bit should be cleared by software 
+ 199   2          I2DAT = (g_u8DeviceAddr_m << 1) | I2C_WR;               //load SLA+W/R 
+ 200   2      
+ 201   2          set_SI;
+ 202   2          }
+ 203   1          else if(u32Status == MASTER_TRANSMIT_ADDRESS_ACK) //0x18              /* SLA+W has been transmitted and A
+             -CK has been received */
+ 204   1          {
+ 205   2          I2DAT = g_au8Reg;                           //load DATA 
+ 206   2      
+ 207   2          set_SI;
+ 208   2          }
+ 209   1          else if(u32Status == MASTER_TRANSMIT_ADDRESS_NACK) //0x20             /* SLA+W has been transmitted an
+             -d NACK has been received */
+ 210   1          {
+ 211   2          set_STO;                                  //transmit STOP     
+ 212   2          set_SI;
+ 213   2          set_STA;
+ 214   2      
+ 215   2          set_AA;                                 //ready for ACK own SLA+W/R or General Call 
+ 216   2          }
+ 217   1          else if(u32Status == MASTER_TRANSMIT_DATA_ACK) //0x28                   /* DATA has been transmitted a
+             -nd ACK has been received */
+ 218   1          {
+ 219   2              if (rawlenth > 0)                           //repeat start
+ 220   2              {
+ 221   3      //      I2C_SET_CONTROL_REG(MASTER_I2C, I2C_CTL_SI | I2C_CTL_STA);  
+ 222   3          
+ 223   3            set_SI;
+ 224   3            set_STA;
+ 225   3              }
+ 226   2            
+ 227   2          else
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 5   
+
+ 228   2          {
+ 229   3      //      I2C_SET_CONTROL_REG(MASTER_I2C, I2C_CTL_SI | I2C_CTL_STO);
+ 230   3          
+ 231   3            set_SI;
+ 232   3            set_STO;
+ 233   3      
+ 234   3            g_u8EndFlag = 1;
+ 235   3          }
+ 236   2          } 
+ 237   1          else if(u32Status == MASTER_REPEAT_START) //0x10                      /* Repeat START has been transmitt
+             -ed and prepare SLA+R */
+ 238   1          {
+ 239   2          clr_STA;                                  //STA bit should be cleared by software 
+ 240   2          I2DAT = (g_u8DeviceAddr_m << 1) | I2C_RD;               //load SLA+W/R    
+ 241   2      
+ 242   2          set_SI;
+ 243   2          }
+ 244   1          else if(u32Status == MASTER_RECEIVE_ADDRESS_ACK) //0x40                 /* SLA+R has been transmitted 
+             -and ACK has been received */
+ 245   1          {       
+ 246   2          if (rawlenth > 1)
+ 247   2          {
+ 248   3            set_SI;
+ 249   3            set_AA;                               //ACK next received DATA 
+ 250   3      
+ 251   3          }
+ 252   2          else
+ 253   2          {
+ 254   3            set_SI;
+ 255   3          }
+ 256   2          }
+ 257   1          else if(u32Status == MASTER_RECEIVE_ADDRESS_NACK) //0x48                  /* SLA+R transmitted, NACK re
+             -ceived */
+ 258   1          {       
+ 259   2              set_STO; 
+ 260   2              set_AA; 
+ 261   2          } 
+ 262   1        else if(u32Status == MASTER_RECEIVE_DATA_ACK) //0x50                  /* DATA has been received and ACK h
+             -as been returned */
+ 263   1          {
+ 264   2              g_au8Buffer[g_u8DataLen_m++] = I2DAT;
+ 265   2              if (g_u8DataLen_m < (rawlenth-1)) //if continuing receiving DATA
+ 266   2          {
+ 267   3            set_SI;
+ 268   3            set_AA;
+ 269   3          }
+ 270   2          else  //if last DATA will be received , not ACK next received DATA 
+ 271   2          {
+ 272   3            clr_AA;
+ 273   3          }
+ 274   2        }
+ 275   1          else if(u32Status == MASTER_RECEIVE_DATA_NACK) //0x58                   /* DATA has been received and 
+             -NACK has been returned */
+ 276   1          {
+ 277   2          g_au8Buffer[g_u8DataLen_m++] = I2DAT; 
+ 278   2          set_SI;
+ 279   2          set_STO; 
+ 280   2      //    set_AA; 
+ 281   2          
+ 282   2              g_u8EndFlag = 1;
+ 283   2          }
+ 284   1          else
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 6   
+
+ 285   1          {
+ 286   2          I2Cx_Master_BusError();
+ 287   2          }
+ 288   1      }
+ 289          
+ 290          void I2Cx_MasterTx_multi(unsigned long u32Status)
+ 291          {
+ 292   1          if(u32Status == MASTER_START_TRANSMIT)  //0x08                      /* START has been transmitted */
+ 293   1          {
+ 294   2          clr_STA;                                //STA bit should be cleared by software 
+ 295   2          I2DAT = (g_u8DeviceAddr_m << 1) | I2C_WR;             //load SLA+W/R 
+ 296   2      
+ 297   2          set_SI;
+ 298   2          
+ 299   2          }
+ 300   1          else if(u32Status == MASTER_TRANSMIT_ADDRESS_ACK)  //0x18             /* SLA+W has been transmitted and
+             - ACK has been received */
+ 301   1          { 
+ 302   2          I2DAT = g_au8Reg;                         //load DATA 
+ 303   2          
+ 304   2          set_SI;
+ 305   2          }
+ 306   1          else if(u32Status == MASTER_TRANSMIT_ADDRESS_NACK) //0x20           /* SLA+W has been transmitted and 
+             -NACK has been received */
+ 307   1          {
+ 308   2          set_STO;                                //transmit STOP   
+ 309   2          set_SI;
+ 310   2          set_STA;      
+ 311   2      
+ 312   2          set_AA;                               //ready for ACK own SLA+W/R or General Call 
+ 313   2          }
+ 314   1          else if(u32Status == MASTER_TRANSMIT_DATA_ACK) //0x28               /* DATA has been transmitted and A
+             -CK has been received */
+ 315   1          { 
+ 316   2              if(g_u8DataLen_m < rawlenth)                    //if continuing to send DATA 
+ 317   2              {
+ 318   3            I2DAT = g_au8Buffer[g_u8DataLen_m++];
+ 319   3            set_SI;
+ 320   3              }
+ 321   2              else                                //if no DATA to be sent 
+ 322   2              {
+ 323   3            set_STO;      
+ 324   3            set_SI;
+ 325   3            set_AA; 
+ 326   3                  g_u8EndFlag = 1;
+ 327   3              } 
+ 328   2          }
+ 329   1          else if(u32Status == MASTER_TRANSMIT_DATA_NACK) //0x30
+ 330   1          {
+ 331   2          set_STO; 
+ 332   2          set_AA; 
+ 333   2          } 
+ 334   1          else if(u32Status == MASTER_ARBITRATION_LOST) //0x38
+ 335   1          {
+ 336   2            set_STA;                                //retry to transmit START if bus free 
+ 337   2            set_SI;
+ 338   2          set_AA; 
+ 339   2          }
+ 340   1          else if(u32Status == BUS_ERROR)         //0x00
+ 341   1          {
+ 342   2            set_STO;                                //recover from bus error 
+ 343   2            set_SI;
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 7   
+
+ 344   2          set_AA;
+ 345   2      
+ 346   2            set_SI;
+ 347   2          set_AA;   
+ 348   2          }   
+ 349   1          else
+ 350   1          { 
+ 351   2          I2Cx_Master_BusError();
+ 352   2          }
+ 353   1      }
+ 354          
+ 355          void I2Cx_Write_Multi_ToSlave(unsigned char address,unsigned int reg,unsigned char *array,unsigned int len
+             -)
+ 356          {   
+ 357   1        #if defined (MASTER_I2C_USE_POLLING)
+ 358   1        unsigned char i = 0;
+ 359   1          unsigned char address_8bit = address << 1;
+ 360   1        
+ 361   1          I2C_start();
+ 362   1          I2C_write(address_8bit|I2C_WR);
+ 363   1      //    I2C_write(HIBYTE(reg));
+ 364   1          I2C_write(LOBYTE(reg));
+ 365   1      
+ 366   1        #if 1
+ 367   1        for (i = 0 ; i < len ; i++)
+ 368   1        {
+ 369   2            I2C_write(array[i]);
+ 370   2        }
+ 371   1        #else
+                I2C_write(*array);
+                #endif
+ 374   1      
+ 375   1          I2C_stop();
+ 376   1      
+ 377   1       
+ 378   1        #elif defined (MASTER_I2C_USE_IRQ)
+                /* u8SlaveAddr     Access Slave address(7-bit) */
+                unsigned char u8SlaveAddr = address ;
+                
+                g_u8DeviceAddr_m = u8SlaveAddr;
+                rawlenth = len;
+                g_au8Reg = reg;
+                g_au8Buffer = array;
+              
+                g_u8DataLen_m = 0;
+                g_u8EndFlag = 0;
+              
+                /* I2C function to write data to slave */
+                I2Cx_Master_HandlerFn = (I2C_FUNC)I2Cx_MasterTx_multi;
+              
+              //  printf("I2Cx_MasterTx_multi finish\r\n");
+              
+                /* I2C as master sends START signal */
+                set_STA;
+              
+                /* Wait I2C Tx Finish */
+                while(g_u8EndFlag == 0);
+                g_u8EndFlag = 0;
+              
+                #endif
+ 403   1        
+ 404   1      }
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 8   
+
+ 405          
+ 406          void I2Cx_Read_Multi_FromSlave(unsigned char address,unsigned int reg,unsigned char *array,unsigned int le
+             -n)
+ 407          { 
+ 408   1        #if defined (MASTER_I2C_USE_POLLING)
+ 409   1          unsigned char i = 0;  
+ 410   1          unsigned char value = 0x00;
+ 411   1          unsigned char address_8bit = address << 1;
+ 412   1        
+ 413   1          I2C_start();
+ 414   1          I2C_write(address_8bit|I2C_WR);
+ 415   1      //    I2C_write(HIBYTE(reg));
+ 416   1          I2C_write(LOBYTE(reg));
+ 417   1        
+ 418   1          I2C_start();
+ 419   1          I2C_write(address_8bit|I2C_RD);
+ 420   1      
+ 421   1        #if 1 
+ 422   1        for (i = 0; i < len; i++) 
+ 423   1        {
+ 424   2          if (i == (len - 1)) 
+ 425   2          {
+ 426   3            //Last byte
+ 427   3            array[i] = I2C_read(I2C_NACK);
+ 428   3          } 
+ 429   2          else 
+ 430   2          {
+ 431   3            array[i] = I2C_read(I2C_ACK);
+ 432   3          }
+ 433   2        }
+ 434   1      
+ 435   1        
+ 436   1        #else
+                *array = I2C_read(I2C_NACK);
+                #endif
+ 439   1        
+ 440   1          I2C_stop();
+ 441   1      
+ 442   1       
+ 443   1        #elif defined (MASTER_I2C_USE_IRQ)
+                /* u8SlaveAddr     Access Slave address(7-bit) */
+                unsigned char u8SlaveAddr = address ;
+              
+                g_u8DeviceAddr_m = u8SlaveAddr;
+                rawlenth = len;
+                g_au8Reg = reg ;
+                g_au8Buffer = array;
+              
+                g_u8EndFlag = 0;
+                g_u8DataLen_m = 0;
+              
+                /* I2C function to read data from slave */
+                I2Cx_Master_HandlerFn = (I2C_FUNC)I2Cx_MasterRx_multi;
+              
+              //  printf("I2Cx_MasterRx_multi finish\r\n");
+                
+                set_STA;
+              
+                /* Wait I2C Rx Finish */
+                while(g_u8EndFlag == 0);
+                
+                #endif  
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 9   
+
+ 466   1      }
+ 467          
+ 468          void I2Cx_Master_Init(void)
+ 469          {    
+ 470   1        P13_OPENDRAIN_MODE;   // SCL
+ 471   1        P14_OPENDRAIN_MODE;   // SDA
+ 472   1        clr_I2CPX;
+ 473   1      
+ 474   1          I2CLK = I2C_CLOCK;
+ 475   1      
+ 476   1        #if defined (MASTER_I2C_USE_IRQ)
+                  set_EI2C;                            //enable I2C interrupt by setting IE1 bit 0
+                  set_EA;
+                #endif
+ 480   1      
+ 481   1        set_I2TOC_I2TOCEN;
+ 482   1        
+ 483   1          set_I2CON_I2CEN;  
+ 484   1      }
+ 485          
+ 486          //void I2Cx_Master_example (unsigned char res)
+ 487          //{
+ 488          //  
+ 489          //  #if 0
+ 490          //  UNUSED_VARIABLE(res);
+ 491          //  #else
+ 492          //  static unsigned long cnt = 0; 
+ 493          //  unsigned char u8RxData[16] = {0};
+ 494          //  unsigned char u8TxData[16] = {0};
+ 495          //  unsigned char u8CalData[16] = {0};
+ 496          //  
+ 497          //  static unsigned int DataCnt = 10; 
+ 498          
+ 499          //  unsigned char addr,reg;
+ 500          //  unsigned long i;  
+ 501          //  unsigned int len;
+ 502          //  unsigned char crc = 0;
+ 503          //  
+ 504          //  printf("I2Cx_Master_example start\r\n");
+ 505          
+ 506          //  //  I2Cx_Master_Init();
+ 507          
+ 508          //  //clear data
+ 509          //  for(i = 0; i < 16; i++)
+ 510          //  {
+ 511          //    u8TxData[i] = 0;
+ 512          //  }
+ 513          
+ 514          //  switch(res)
+ 515          //  {
+ 516          //    case 1 :
+ 517          //      addr = I2C_ADDRESS; //0x15;
+ 518          //      reg = 0x66;
+ 519          //      len = 10;
+ 520          //    
+ 521          //      //fill data
+ 522          //      u8TxData[0] = 0x12 ;
+ 523          //      u8TxData[1] = 0x34 ;  
+ 524          //      u8TxData[2] = 0x56 ;
+ 525          //      u8TxData[3] = 0x78 ;
+ 526          //      u8TxData[4] = 0x90 ;
+ 527          //      u8TxData[5] = 0xAB ;
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 10  
+
+ 528          //      u8TxData[6] = 0xCD ;
+ 529          //      u8TxData[7] = 0xEF ;
+ 530          //      u8TxData[8] = 0x99 ;
+ 531          //      u8TxData[9] = 0xFE ;
+ 532          
+ 533          //      I2Cx_Write_Multi_ToSlave(addr,reg,u8TxData,len);
+ 534          //      
+ 535          //      printf("I2Cx_Write finish\r\n");
+ 536          //      printf("addr : 0x%2X, reg : 0x%2X , data (%2d) : \r\n",addr,reg,cnt++);
+ 537          //      
+ 538          //      break;
+ 539          
+ 540          //    case 2 :
+ 541          //      addr = I2C_ADDRESS; //0x15;
+ 542          //      reg = 0x66;
+ 543          //      len = 10;
+ 544          //    
+ 545          //      //clear data
+ 546          //      for(i = 0; i < 16; i++)
+ 547          //      {
+ 548          //        u8RxData[i] = 0;
+ 549          //      }
+ 550          
+ 551          //      I2Cx_Read_Multi_FromSlave(addr,reg,u8RxData,len);
+ 552          //      
+ 553          //      printf("\r\nI2Cx_Read  finish\r\n");
+ 554          //      
+ 555          //      for(i = 0; i < 16 ; i++)
+ 556          //      {
+ 557          //        printf("0x%2X ,", u8RxData[i]);
+ 558          //          if ((i+1)%8 ==0)
+ 559          //            {
+ 560          //                printf("\r\n");
+ 561          //            }   
+ 562          //      }
+ 563          
+ 564          //      printf("\r\n\r\n\r\n");
+ 565          //    
+ 566          //      break;
+ 567          
+ 568          //    case 3 :
+ 569          //      addr = I2C_ADDRESS; //0x15;       
+ 570          //      reg = 0x00;
+ 571          //      len = 2;
+ 572          
+ 573          //      //calculate crc
+ 574          //      u8CalData[0] = reg ;  //flag
+ 575          //      u8CalData[1] = DataCnt; //duty
+ 576          //      crc = CRC_Get(u8CalData , 2);
+ 577          //      
+ 578          //      //fill data
+ 579          //      u8TxData[0] = u8CalData[1] ;
+ 580          //      u8TxData[1] = crc;
+ 581          
+ 582          //      DataCnt = (DataCnt >= 100) ? (0) : (DataCnt+10) ;
+ 583          
+ 584          //      I2Cx_Write_Multi_ToSlave(addr,reg,u8TxData,len);
+ 585          //      
+ 586          //      printf("I2Cx_Write finish\r\n");
+ 587          //      printf("addr : 0x%2X, reg : 0x%2X , data (%2d) : \r\n",addr,reg,cnt++);
+ 588          //      
+ 589          //      break;
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 11  
+
+ 590          
+ 591          //    case 4 :
+ 592          //      addr = I2C_ADDRESS; //0x15;
+ 593          //      reg = 0x01;
+ 594          //      len = 5;
+ 595          
+ 596          //      //calculate crc
+ 597          //      u8CalData[0] = reg ;  //flag
+ 598          //      u8CalData[1] = 0x00;  //type
+ 599          //      u8CalData[2] = 10;
+ 600          //      u8CalData[3] = 20;
+ 601          //      u8CalData[4] = 30;      
+ 602          //      crc = CRC_Get(u8CalData , 5);
+ 603          //      
+ 604          //      //fill data
+ 605          //      u8TxData[0] = u8CalData[1];
+ 606          //      u8TxData[1] = u8CalData[2];
+ 607          //      u8TxData[2] = u8CalData[3] ;
+ 608          //      u8TxData[3] = u8CalData[4];
+ 609          //      u8TxData[4] = crc;
+ 610          
+ 611          //      I2Cx_Write_Multi_ToSlave(addr,reg,u8TxData,len);
+ 612          //      
+ 613          //      printf("I2Cx_Write finish\r\n");
+ 614          //      printf("addr : 0x%2X, reg : 0x%2X , data (%2d) : \r\n",addr,reg,cnt++);
+ 615          //      
+ 616          //      break;
+ 617          
+ 618          //    case 5 :
+ 619          //      addr = I2C_ADDRESS; //0x15;
+ 620          //      reg = 0x02;
+ 621          //      len = 6;
+ 622          
+ 623          //      //calculate crc
+ 624          //      u8CalData[0] = reg ;  //flag
+ 625          //      u8CalData[1] = 0x01;//type
+ 626          //      u8CalData[2] = 0x1E;
+ 627          //      u8CalData[3] = 0x2E;
+ 628          //      u8CalData[4] = 0x3E;      
+ 629          //      crc = CRC_Get(u8CalData , 5);
+ 630          //      
+ 631          //      //fill data
+ 632          //      u8TxData[0] = u8CalData[0];
+ 633          //      u8TxData[1] = u8CalData[1];
+ 634          //      u8TxData[2] = u8CalData[2];
+ 635          //      u8TxData[3] = u8CalData[3];
+ 636          //      u8TxData[4] = u8CalData[4];
+ 637          //      u8TxData[5] = crc;
+ 638          //      
+ 639          //      I2Cx_Write_Multi_ToSlave(addr,reg,u8TxData,len);
+ 640          //      
+ 641          //      printf("I2Cx_Write finish\r\n");
+ 642          //      printf("addr : 0x%2X, reg : 0x%2X , data (%2d) : \r\n",addr,reg,cnt++);
+ 643          //      
+ 644          //      break;
+ 645          
+ 646          //    case 6 :
+ 647          //      addr = I2C_ADDRESS; //0x15;
+ 648          //      reg = 0x04;
+ 649          //      len = 4;
+ 650          
+ 651          //      //calculate crc
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 12  
+
+ 652          //      u8CalData[0] = reg ;  //flag
+ 653          //      u8CalData[1] = 0x00;  //read page
+ 654          //      u8CalData[2] = 0x00;  //type      
+ 655          //      crc = CRC_Get(u8CalData , 3);
+ 656          //      
+ 657          //      //fill data
+ 658          //      u8TxData[0] = u8CalData[0];
+ 659          //      u8TxData[1] = u8CalData[1];
+ 660          //      u8TxData[2] = u8CalData[2];
+ 661          //      u8TxData[3] = crc;  
+ 662          //      
+ 663          //      I2Cx_Write_Multi_ToSlave(addr,reg,u8TxData,len);
+ 664          //      I2Cx_Read_Multi_FromSlave(addr,reg,u8RxData,9);//16
+ 665          //        
+ 666          //      printf("\r\nI2Cx_Read  finish\r\n");
+ 667          //      
+ 668          //      for(i = 0; i < 16 ; i++)
+ 669          //      {
+ 670          //        printf("0x%2X ,", u8RxData[i]);
+ 671          //          if ((i+1)%8 ==0)
+ 672          //            {
+ 673          //                printf("\r\n");
+ 674          //            }   
+ 675          //      }
+ 676          
+ 677          //      printf("\r\n\r\n\r\n");     
+ 678          
+ 679          //      
+ 680          //      break;
+ 681          
+ 682          //    case 7 :
+ 683          //      addr = I2C_ADDRESS; //0x15;
+ 684          //      reg = 0x04;
+ 685          //      len = 4;
+ 686          //      
+ 687          //      I2Cx_Read_Multi_FromSlave(addr,reg,u8RxData,16);
+ 688          //    
+ 689          //      printf("\r\nI2Cx_Read  finish\r\n");
+ 690          //      
+ 691          //      for(i = 0; i < 16 ; i++)
+ 692          //      {
+ 693          //        printf("0x%2X ,", u8RxData[i]);
+ 694          //          if ((i+1)%8 ==0)
+ 695          //            {
+ 696          //                printf("\r\n");
+ 697          //            }   
+ 698          //      }
+ 699          
+ 700          //      printf("\r\n\r\n\r\n");     
+ 701          //      
+ 702          //      break;
+ 703          //      
+ 704          //    case 9 :
+ 705          //      addr = I2C_ADDRESS; //0x15;
+ 706          //      reg = 0x66;
+ 707          //      len = 10;
+ 708          //    
+ 709          //      //fill data
+ 710          //      u8TxData[0] = 0x12 ;
+ 711          //      u8TxData[1] = 0x34 ;  
+ 712          //      u8TxData[2] = 0x56 ;
+ 713          //      u8TxData[3] = 0x78 ;
+C51 COMPILER V9.55   I2C_MASTER                                                            11/08/2021 17:30:56 PAGE 13  
+
+ 714          //      u8TxData[4] = 0x90 ;
+ 715          //      u8TxData[5] = 0xAB ;
+ 716          //      u8TxData[6] = 0xCD ;
+ 717          //      u8TxData[7] = 0xEF ;
+ 718          //      u8TxData[8] = 0x99 ;
+ 719          //      u8TxData[9] = 0xFE ;
+ 720          
+ 721          //      I2Cx_Write_Multi_ToSlave(addr,reg,u8TxData,len);
+ 722          //      
+ 723          //      printf("I2Cx_Write finish\r\n");
+ 724          //      printf("addr : 0x%2X, reg : 0x%2X , data (%2d) : \r\n",addr,reg,cnt++);
+ 725          //      
+ 726          //      //clear data
+ 727          //      for(i = 0; i < 16; i++)
+ 728          //      {
+ 729          //        u8RxData[i] = 0;
+ 730          //      }
+ 731          
+ 732          //      I2Cx_Read_Multi_FromSlave(addr,reg,u8RxData,len);
+ 733          //      
+ 734          //      printf("\r\nI2Cx_Read  finish\r\n");
+ 735          //      
+ 736          //      for(i = 0; i < 16 ; i++)
+ 737          //      {
+ 738          //        printf("0x%2X ,", u8RxData[i]);
+ 739          //          if ((i+1)%8 ==0)
+ 740          //            {
+ 741          //                printf("\r\n");
+ 742          //            }   
+ 743          //      }
+ 744          
+ 745          //      printf("\r\n\r\n\r\n");
+ 746          
+ 747          //      
+ 748          //      break;
+ 749          //  } 
+ 750          //  #endif
+ 751          //}
+ 752          
+ 753          
+ 754          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1511    ----
+   CONSTANT SIZE    =     19    ----
+   XDATA SIZE       =     11      43
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

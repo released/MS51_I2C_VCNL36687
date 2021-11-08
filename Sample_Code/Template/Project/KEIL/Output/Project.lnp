@@ -1,0 +1,7 @@
+".\Output\main.obj",
+".\Output\i2c_master.obj",
+".\Output\STARTUP.obj",
+".\Output\Main_User.obj" 
+TO ".\Output\Project" 
+PRINT(".\LST\Project.m51") RAMSIZE(256) 
+DISABLEWARNING (16) 

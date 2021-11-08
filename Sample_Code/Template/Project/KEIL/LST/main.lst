@@ -1,0 +1,569 @@
+C51 COMPILER V9.55   MAIN                                                                  11/08/2021 17:30:56 PAGE 1   
+
+
+C51 COMPILER V9.55, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Output\main.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE ..\main.c LARGE OPTIMIZE(7,SPEED) BROWSE INCDIR(..\..\..\..\Library\Devi
+                    -ce\Include;..\..\..\..\Library\StdDriver\inc;..\..\Project;..\VCNL36687) DEBUG OBJECTEXTEND PRINT(.\LST\main.lst) TABS(2
+                    -) OBJECT(.\Output\main.obj)
+
+line level    source
+
+   1          /*_____ I N C L U D E S ____________________________________________________*/
+   2          #include <stdio.h>
+   3          #include "MS51_16K.h"
+   4          #include "i2c_conf.h"
+   5          #include  "project_config.h"
+   6          
+   7          #include "Main_User.h"
+   8          
+   9          /*_____ D E C L A R A T I O N S ____________________________________________*/
+  10          
+  11          
+  12          volatile uint8_t u8TH0_Tmp = 0;
+  13          volatile uint8_t u8TL0_Tmp = 0;
+  14          
+  15          //UART 0
+  16          bit BIT_TMP;
+  17          bit BIT_UART;
+  18          
+  19          
+  20          /*_____ D E F I N I T I O N S ______________________________________________*/
+  21          volatile uint32_t BitFlag = 0;
+  22          volatile uint32_t counter_tick = 0;
+  23          
+  24          /*_____ M A C R O S ________________________________________________________*/
+  25          
+  26          
+  27          
+  28          /*_____ F U N C T I O N S __________________________________________________*/
+  29          
+  30          extern void I2Cx_Master_Init(void);
+  31          
+  32          
+  33          char putchar (char c)  {
+  34   1        while (!TI);
+  35   1        TI = 0;
+  36   1        return (SBUF = c);
+  37   1      }
+  38          
+  39          void tick_counter(void)
+  40          {
+  41   1        counter_tick++;
+  42   1      }
+  43          
+  44          uint32_t get_tick(void)
+  45          {
+  46   1        return (counter_tick);
+  47   1      }
+  48          
+  49          void set_tick(uint32_t t)
+  50          {
+  51   1        counter_tick = t;
+  52   1      }
+  53          
+C51 COMPILER V9.55   MAIN                                                                  11/08/2021 17:30:56 PAGE 2   
+
+  54          #if defined (REDUCE_CODE_SIZE)
+              void compare_buffer(uint8_t *src, uint8_t *des, int nBytes)
+              {
+                  uint16_t i = 0; 
+                
+                  for (i = 0; i < nBytes; i++)
+                  {
+                      if (src[i] != des[i])
+                      {
+                          printf("error idx : %4d : 0x%2X , 0x%2X\r\n", i , src[i],des[i]);
+                    set_flag(flag_error , Enable);
+                      }
+                  }
+              
+                if (!is_flag_set(flag_error))
+                {
+                    printf("compare_buffer finish \r\n"); 
+                  set_flag(flag_error , Disable);
+                }
+              
+              }
+              
+              void reset_buffer(void *dest, unsigned int val, unsigned int size)
+              {
+                  uint8_t *pu8Dest;
+              //    unsigned int i;
+                  
+                  pu8Dest = (uint8_t *)dest;
+              
+                #if 1
+                while (size-- > 0)
+                  *pu8Dest++ = val;
+                #else
+                memset(pu8Dest, val, size * (sizeof(pu8Dest[0]) ));
+                #endif
+                
+              }
+              
+              void copy_buffer(void *dest, void *src, unsigned int size)
+              {
+                  uint8_t *pu8Src, *pu8Dest;
+                  unsigned int i;
+                  
+                  pu8Dest = (uint8_t *)dest;
+                  pu8Src  = (uint8_t *)src;
+              
+              
+                #if 0
+                  while (size--)
+                    *pu8Dest++ = *pu8Src++;
+                #else
+                  for (i = 0; i < size; i++)
+                      pu8Dest[i] = pu8Src[i];
+                #endif
+              }
+              
+              void dump_buffer(uint8_t *pucBuff, int nBytes)
+              {
+                  uint16_t i = 0;
+                  
+                  printf("dump_buffer : %2d\r\n" , nBytes);    
+                  for (i = 0 ; i < nBytes ; i++)
+C51 COMPILER V9.55   MAIN                                                                  11/08/2021 17:30:56 PAGE 3   
+
+                  {
+                      printf("0x%2X," , pucBuff[i]);
+                      if ((i+1)%8 ==0)
+                      {
+                          printf("\r\n");
+                      }            
+                  }
+                  printf("\r\n\r\n");
+              }
+              
+              void  dump_buffer_hex(uint8_t *pucBuff, int nBytes)
+              {
+                  int     nIdx, i;
+              
+                  nIdx = 0;
+                  while (nBytes > 0)
+                  {
+                      printf("0x%02X  ", nIdx);
+                      for (i = 0; i < 16; i++)
+                          printf("%2BX ", pucBuff[nIdx + i]);
+                      printf("  ");
+                      for (i = 0; i < 16; i++)
+                      {
+                          if ((pucBuff[nIdx + i] >= 0x20) && (pucBuff[nIdx + i] < 127))
+                              printf("%c", pucBuff[nIdx + i]);
+                          else
+                              printf(".");
+                          nBytes--;
+                      }
+                      nIdx += 16;
+                      printf("\n");
+                  }
+                  printf("\n");
+              }
+              
+              
+              
+              void send_UARTString(uint8_t* Data)
+              {
+                #if 1
+                uint16_t i = 0;
+              
+                while (Data[i] != '\0')
+                {
+                  #if 1
+                  SBUF = Data[i++];
+                  #else
+                  UART_Send_Data(UART0,Data[i++]);    
+                  #endif
+                }
+              
+                #endif
+              
+                #if 0
+                uint16_t i = 0;
+                
+                for(i = 0;i< (strlen(Data)) ;i++ )
+                {
+                  UART_Send_Data(UART0,Data[i]);
+                }
+                #endif
+              
+C51 COMPILER V9.55   MAIN                                                                  11/08/2021 17:30:56 PAGE 4   
+
+                #if 0
+                  while(*Data)  
+                  {  
+                      UART_Send_Data(UART0, (unsigned char) *Data++);  
+                  } 
+                #endif
+              }
+              
+              void send_UARTASCII(uint16_t Temp)
+              {
+                  uint8_t print_buf[16];
+                  uint16_t i = 15, j;
+              
+                  *(print_buf + i) = '\0';
+                  j = (uint16_t)Temp >> 31;
+                  if(j)
+                      (uint16_t) Temp = ~(uint16_t)Temp + 1;
+                  do
+                  {
+                      i--;
+                      *(print_buf + i) = '0' + (uint16_t)Temp % 10;
+                      (uint16_t)Temp = (uint16_t)Temp / 10;
+                  }
+                  while((uint16_t)Temp != 0);
+                  if(j)
+                  {
+                      i--;
+                      *(print_buf + i) = '-';
+                  }
+                  send_UARTString(print_buf + i);
+              }
+              
+              void send_UARTHex(uint16_t u16Temp)
+              {
+                  uint8_t print_buf[16];
+                  uint32_t i = 15;
+                  uint32_t temp;
+              
+                  *(print_buf + i) = '\0';
+                  do
+                  {
+                      i--;
+                      temp = u16Temp % 16;
+                      if(temp < 10)
+                          *(print_buf + i) = '0' + temp;
+                      else
+                          *(print_buf + i) = 'a' + (temp - 10) ;
+                      u16Temp = u16Temp / 16;
+                  }
+                  while(u16Temp != 0);
+                  send_UARTString(print_buf + i);
+              }
+              #endif
+ 231          
+ 232          void GPIO_Init(void)  //for test
+ 233          {
+ 234   1          P12_PUSHPULL_MODE;  
+ 235   1      
+ 236   1      }
+ 237          
+ 238          void Timer_Delay(unsigned long u32SYSCLK, unsigned int u16CNT, unsigned int u16DLYUnit)
+ 239          {
+C51 COMPILER V9.55   MAIN                                                                  11/08/2021 17:30:56 PAGE 5   
+
+ 240   1          unsigned char TL1TMP,TH1TMP;
+ 241   1      
+ 242   1          TIMER1_FSYS_DIV12;                                 //T1M=0, Timer1 Clock = Fsys/12
+ 243   1          ENABLE_TIMER1_MODE1;                                //Timer1 is 16-bit mode
+ 244   1          TL1TMP = LOBYTE(65535-((u32SYSCLK/1000000)*u16DLYUnit)/12);
+ 245   1          TH1TMP = HIBYTE(65535-((u32SYSCLK/1000000)*u16DLYUnit)/12);
+ 246   1        
+ 247   1          while (u16CNT != 0)
+ 248   1          {
+ 249   2            TL1 = TL1TMP;
+ 250   2            TH1 = TH1TMP;
+ 251   2            set_TCON_TR1;                                //Start Timer1
+ 252   2            while (!TF1);                                //Check Timer1 Time-Out Flag
+ 253   2            clr_TCON_TF1;
+ 254   2            clr_TCON_TR1;
+ 255   2            u16CNT --;
+ 256   2          }
+ 257   1      }
+ 258          
+ 259          void Timer0_IRQHandler(void)
+ 260          {
+ 261   1      //  static uint16_t counter = 0;
+ 262   1      
+ 263   1        tick_counter();
+ 264   1      
+ 265   1        if ((get_tick() % 1000) == 0)
+ 266   1        {
+ 267   2      
+ 268   2          P12 ^= 1;
+ 269   2          
+ 270   2      //      printf("Timer0_IRQHandler : %bd\r\n",counter++);
+ 271   2      
+ 272   2        }
+ 273   1      
+ 274   1        if ((get_tick() % 50) == 0)
+ 275   1        {
+ 276   2      
+ 277   2        }
+ 278   1      
+ 279   1        
+ 280   1      }
+ 281          
+ 282          void Timer0_ISR(void) interrupt 1        // Vector @  0x0B
+ 283          {
+ 284   1          _push_(SFRS); 
+ 285   1        
+ 286   1          TH0 = u8TH0_Tmp;
+ 287   1          TL0 = u8TL0_Tmp;
+ 288   1          clr_TCON_TF0;
+ 289   1        
+ 290   1        Timer0_IRQHandler();
+ 291   1      
+ 292   1          _pop_(SFRS);  
+ 293   1      }
+ 294          
+ 295          void Timer0_Init(void)
+ 296          {
+ 297   1        uint16_t res = 0;
+ 298   1      
+ 299   1        ENABLE_TIMER0_MODE1;
+ 300   1      
+ 301   1        #if defined (ENABLE_16MHz)
+C51 COMPILER V9.55   MAIN                                                                  11/08/2021 17:30:56 PAGE 6   
+
+                u8TH0_Tmp = HIBYTE(TIMER_DIV12_VALUE_1ms_FOSC_160000);
+                u8TL0_Tmp = LOBYTE(TIMER_DIV12_VALUE_1ms_FOSC_160000); 
+              
+                
+                #elif defined (ENABLE_24MHz)
+ 307   1        u8TH0_Tmp = HIBYTE(TIMER_DIV12_VALUE_1ms_FOSC_240000);
+ 308   1        u8TL0_Tmp = LOBYTE(TIMER_DIV12_VALUE_1ms_FOSC_240000); 
+ 309   1        #endif
+ 310   1        
+ 311   1          TH0 = u8TH0_Tmp;
+ 312   1          TL0 = u8TL0_Tmp;
+ 313   1      
+ 314   1          ENABLE_TIMER0_INTERRUPT;                       //enable Timer0 interrupt
+ 315   1          ENABLE_GLOBAL_INTERRUPT;                       //enable interrupts
+ 316   1        
+ 317   1          set_TCON_TR0;                                  //Timer0 run
+ 318   1      }
+ 319          
+ 320          void UART0_Process(uint8_t res)
+ 321          {
+ 322   1        if (res > 0x7F)
+ 323   1        {
+ 324   2          return;
+ 325   2        }
+ 326   1      
+ 327   1        if (is_flag_set(flag_uart0_receive))
+ 328   1        {
+ 329   2          set_flag(flag_uart0_receive , Disable);
+ 330   2      
+ 331   2          #if 0
+              
+                  res -= 0x30;
+                  I2Cx_Master_example(res);
+                  
+                  #else
+ 337   2      //    printf("0x%2X\r\n" , res);
+ 338   2          switch(res)
+ 339   2          {
+ 340   3            case '1' :
+ 341   3      
+ 342   3              break;
+ 343   3      
+ 344   3            case '2': 
+ 345   3            
+ 346   3              break;
+ 347   3      
+ 348   3            case '3': 
+ 349   3            
+ 350   3              break;      
+ 351   3      
+ 352   3            case '4': 
+ 353   3          
+ 354   3              break;  
+ 355   3      
+ 356   3            case '5': 
+ 357   3          
+ 358   3              break;  
+ 359   3      
+ 360   3            case '6': 
+ 361   3          
+ 362   3              break;  
+ 363   3      
+C51 COMPILER V9.55   MAIN                                                                  11/08/2021 17:30:56 PAGE 7   
+
+ 364   3            case '0' : 
+ 365   3      
+ 366   3              break;
+ 367   3          } 
+ 368   2          #endif
+ 369   2        }
+ 370   1      }
+ 371          
+ 372          void Serial_ISR (void) interrupt 4 
+ 373          {
+ 374   1          if (RI)
+ 375   1          {   
+ 376   2          set_flag(flag_uart0_receive , Enable);
+ 377   2          UART0_Process(SBUF);
+ 378   2      
+ 379   2            clr_SCON_RI;                                         // Clear RI (Receive Interrupt).
+ 380   2          }
+ 381   1          if  (TI)
+ 382   1          {
+ 383   2            if(!BIT_UART)
+ 384   2            {
+ 385   3                TI = 0;
+ 386   3            }
+ 387   2          }
+ 388   1      }
+ 389          
+ 390          void UART0_Init(void)
+ 391          {
+ 392   1        unsigned long u32Baudrate = 115200;
+ 393   1        
+ 394   1        P06_QUASI_MODE;    //Setting UART pin as Quasi mode for transmit
+ 395   1        
+ 396   1        #if 1
+ 397   1        SCON = 0x50;          //UART0 Mode1,REN=1,TI=1
+ 398   1        set_PCON_SMOD;        //UART0 Double Rate Enable
+ 399   1        T3CON &= 0xF8;        //T3PS2=0,T3PS1=0,T3PS0=0(Prescale=1)
+ 400   1        set_T3CON_BRCK;        //UART0 baud rate clock source = Timer3
+ 401   1      
+ 402   1        #if defined (ENABLE_16MHz)
+                RH3    = HIBYTE(65536 - (1000000/u32Baudrate)-1);  
+                RL3    = LOBYTE(65536 - (1000000/u32Baudrate)-1);  
+                #elif defined (ENABLE_24MHz)
+ 406   1        RH3    = HIBYTE(65536 - (SYS_CLOCK/16/u32Baudrate));  
+ 407   1        RL3    = LOBYTE(65536 - (SYS_CLOCK/16/u32Baudrate));  
+ 408   1        #endif
+ 409   1        
+ 410   1        set_T3CON_TR3;         //Trigger Timer3
+ 411   1        set_IE_ES;
+ 412   1      
+ 413   1        ENABLE_GLOBAL_INTERRUPT;
+ 414   1      
+ 415   1        set_SCON_TI;
+ 416   1        BIT_UART=1;
+ 417   1        #else 
+                
+                SCON = 0x50;            //UART0 Mode1,REN=1,TI=1
+                TMOD |= 0x20;         //Timer1 Mode1
+                set_PCON_SMOD;            //UART0 Double Rate Enable
+                set_CKCON_T1M;
+                clr_T3CON_BRCK;           //Serial port 0 baud rate clock source = Timer1
+                TH1 = 256 - (SYS_CLOCK/16/u32Baudrate);
+              
+C51 COMPILER V9.55   MAIN                                                                  11/08/2021 17:30:56 PAGE 8   
+
+                set_TCON_TR1;
+                ENABLE_UART0_INTERRUPT;
+              
+                ENABLE_GLOBAL_INTERRUPT;
+                
+                set_SCON_TI;
+                BIT_UART=1;
+                
+                #endif
+ 435   1      }
+ 436          
+ 437          
+ 438          
+ 439          #if defined (ENABLE_16MHz)
+              void MODIFY_HIRC_16(void)
+              {
+                  unsigned char data hircmap0,hircmap1;
+                  set_CHPCON_IAPEN;
+                  IAPAL = 0x30;
+                  IAPAH = 0x00;
+                  IAPCN = READ_UID;
+                  set_IAPTRG_IAPGO;
+                  hircmap0 = IAPFD;
+                  IAPAL = 0x31;
+                  IAPAH = 0x00;
+                  set_IAPTRG_IAPGO;
+                  hircmap1 = IAPFD;
+                  clr_CHPCON_IAPEN;
+                  TA=0XAA;
+                  TA=0X55;
+                  RCTRIM0 = hircmap0;
+                  TA=0XAA;
+                  TA=0X55;
+                  RCTRIM1 = hircmap1;
+              }
+              
+              #elif defined (ENABLE_24MHz)
+ 463          void MODIFY_HIRC_24(void)
+ 464          {
+ 465   1          unsigned char data hircmap0,hircmap1;
+ 466   1      /* Check if power on reset, modify HIRC */
+ 467   1          if (PCON&SET_BIT4)
+ 468   1          {
+ 469   2              set_CHPCON_IAPEN;
+ 470   2              IAPAL = 0x38;
+ 471   2              IAPAH = 0x00;
+ 472   2              IAPCN = READ_UID;
+ 473   2              set_IAPTRG_IAPGO;
+ 474   2              hircmap0 = IAPFD;
+ 475   2              IAPAL = 0x39;
+ 476   2              IAPAH = 0x00;
+ 477   2              set_IAPTRG_IAPGO;
+ 478   2              hircmap1 = IAPFD;
+ 479   2              clr_CHPCON_IAPEN;
+ 480   2              TA=0XAA;
+ 481   2              TA=0X55;
+ 482   2              RCTRIM0 = hircmap0;
+ 483   2              TA=0XAA;
+ 484   2              TA=0X55;
+ 485   2              RCTRIM1 = hircmap1;
+ 486   2              clr_CHPCON_IAPEN;
+ 487   2          }
+C51 COMPILER V9.55   MAIN                                                                  11/08/2021 17:30:56 PAGE 9   
+
+ 488   1      }
+ 489          
+ 490          #endif
+ 491          
+ 492          void SYS_Init(void)
+ 493          {
+ 494   1        #if defined (ENABLE_16MHz)
+                MODIFY_HIRC_16();
+                #else
+ 497   1          MODIFY_HIRC_24();
+ 498   1        #endif
+ 499   1      
+ 500   1          ALL_GPIO_QUASI_MODE;
+ 501   1          ENABLE_GLOBAL_INTERRUPT;                // global enable bit  
+ 502   1      }
+ 503          
+ 504          void main (void) 
+ 505          {
+ 506   1      //  uint8_t res = 1;
+ 507   1        
+ 508   1          SYS_Init();
+ 509   1      
+ 510   1          UART0_Init();
+ 511   1                    
+ 512   1        GPIO_Init();          
+ 513   1      
+ 514   1        I2Cx_Master_Init();
+ 515   1          INIT_VCNL36687();
+ 516   1        
+ 517   1        Timer0_Init();
+ 518   1      
+ 519   1        
+ 520   1          while(1)
+ 521   1          {
+ 522   2          PRINT_VCNL36687();
+ 523   2      
+ 524   2          }
+ 525   1      }
+ 526          
+ 527          
+ 528          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1008    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     10      15
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----       2
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      2    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
